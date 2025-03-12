@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Digital Clock</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://unicons.iconscout.com/release/v4.0.0/css/line.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2d2f41">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="Digital Clock">
+    <link rel="apple-touch-icon" href="icons/icon-152x152.png">
+</head>
+<body>
+    <div class="digital-clock">
+        <div class="calendar-dots">
+            <div class="line-bar"></div>
+        </div>
+        <div class="time">
+            <span class="hours">00</span>
+            <span class="dots">:</span>
+            <span class="minutes">00</span>
+            <span class="dots">:</span>
+            <span class="seconds">00</span>
+            <div class="right-side">
+                <span class="period">AM</span>
+            </div>
+        </div>
+        <div class="calendar">
+            <span class="month-name">Month</span>,
+            <span class="day-name">Sunday</span>
+            <span class="day-number">00</span>, 
+            <span class="year">0000</span>
+        </div>
+    </div>
+
+    <div class="monthly-calendar">
+        <div class="calendar-header">
+            <button id="prevMonth"><i class="uil uil-angle-left"></i></button>
+            <h2 id="monthDisplay">February 2025</h2>
+            <button id="nextMonth"><i class="uil uil-angle-right"></i></button>
+        </div>
+        <div class="weekdays">
+            <div>Sun</div>
+            <div>Mon</div>
+            <div>Tue</div>
+            <div>Wed</div>
+            <div>Thu</div>
+            <div>Fri</div>
+            <div>Sat</div>
+        </div>
+        <div class="calendar-days" id="calendarDays">
+            <!-- Days will be filled by JavaScript -->
+        </div>
+    </div>
+
+    <!-- Task Modal -->
+    <div class="task-modal" id="taskModal">
+        <div class="task-modal-content">
+            <div class="modal-header">
+                <h3>Tasks for <span id="selectedDate"></span></h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div class="tasks-list">
+                <ul id="tasksList"></ul>
+            </div>
+            <div id="addTaskForm" style="display: none;">
+                <input type="text" id="taskInput" placeholder="Enter task...">
+                <div class="time-inputs">
+                    <div class="time-field">
+                        <label>Start Time:</label>
+                        <input type="time" id="startTime">
+                    </div>
+                    <div class="time-field">
+                        <label>End Time:</label>
+                        <input type="time" id="endTime">
+                    </div>
+                </div>
+                <button id="saveTaskBtn">Save Task</button>
+                <button id="cancelAddTask">Cancel</button>
+            </div>
+            <button id="addTaskBtn">+ Add New Task</button>
+        </div>
+    </div>
+
+    <!-- Task Alarm Popup -->
+    <div class="task-alarm" id="taskAlarm">
+        <div class="task-alarm-content">
+            <h2 class="task-alarm-title">Task Time!</h2>
+            <div class="task-alarm-time" id="taskAlarmTime">12:00 PM</div>
+            <div class="task-alarm-text" id="taskAlarmText">Task Description</div>
+            <button class="complete-task-btn" id="completeTaskBtn">Mark as Complete</button>
+        </div>
+    </div>
+
+    <script>
+        // Register Service Worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('/sw.js').then(function(registration) {
+                    console.log('ServiceWorker registration successful');
+                }, function(err) {
+                    console.log('ServiceWorker registration failed: ', err);
+                });
+            });
+        }
+        
+        // Add to Home Screen prompt
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            // Show your custom "Add to Home Screen" button here if you want
+        });
+
+        const hours = document.querySelector('.hours');
+        const minutes = document.querySelector('.minutes');
+        const seconds = document.querySelector('.seconds');
+        const period = document.querySelector('.period');
+
+        const monthName = document.querySelector('.month-name');
+        const dayName = document.querySelector('.day-name');
+        const dayNumber = document.querySelector('.day-number');
+        const year = document.querySelector('.year');
+
+        const calendarDots = document.querySelector('.calendar-dots');
+        const monthlyCalendar = document.querySelector('.monthly-calendar');
+        const calendarDays = document.getElementById('calendarDays');
+        const monthDisplay = document.getElementById('monthDisplay');
+        const prevMonth = document.getElementById('prevMonth');
+        const nextMonth = document.getElementById('nextMonth');
+
+        // Task Modal Elements
+        const taskModal = document.getElementById('taskModal');
+        const closeModal = document.querySelector('.close-modal');
+        const selectedDateSpan = document.getElementById('selectedDate');
+        const taskInput = document.getElementById('taskInput');
+        const startTime = document.getElementById('startTime');
+        const endTime = document.getElementById('endTime');
+        const addTaskBtn = document.getElementById('addTaskBtn');
+        const addTaskForm = document.getElementById('addTaskForm');
+        const saveTaskBtn = document.getElementById('saveTaskBtn');
+        const cancelAddTask = document.getElementById('cancelAddTask');
+        const tasksList = document.getElementById('tasksList');
+
+        // Task Alarm Elements
+        const taskAlarm = document.getElementById('taskAlarm');
+        const taskAlarmTime = document.getElementById('taskAlarmTime');
+        const taskAlarmText = document.getElementById('taskAlarmText');
+        const completeTaskBtn = document.getElementById('completeTaskBtn');
+
+        let currentDate = new Date();
+        let tasks = {};
+        let selectedDateStr = '';
+        let activeTaskAlarms = [];
+
+        function clock() {
+            let today = new Date();
+            let h = today.getHours();
+            let m = today.getMinutes();
+            let s = today.getSeconds();
+            let p = "AM";
+
+            if(h > 12) {
+                h = h - 12;
+                p = "PM";
+            }
+            if(h == 0) {
+                h = 12;
+            }
+
+            h = h < 10 ? "0" + h : h;
+            m = m < 10 ? "0" + m : m;
+            s = s < 10 ? "0" + s : s;
+
+            hours.textContent = h;
+            minutes.textContent = m;
+            seconds.textContent = s;
+            period.textContent = p;
+
+            const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+            dayName.textContent = days[today.getDay()];
+            monthName.textContent = today.toLocaleString('default', { month: 'long' });
+            dayNumber.textContent = today.getDate();
+            year.textContent = today.getFullYear();
+        }
+
+        function formatDateString(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        function generateCalendar(date) {
+            const firstDay = new Date(date.getFullYear(), date.getMonth(), 1);
+            const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+            const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+            
+            monthDisplay.textContent = `${months[date.getMonth()]} ${date.getFullYear()}`;
+            calendarDays.innerHTML = '';
+
+            for(let i = 0; i < firstDay.getDay(); i++) {
+                const emptyDay = document.createElement('div');
+                emptyDay.classList.add('calendar-day', 'empty');
+                calendarDays.appendChild(emptyDay);
+            }
+
+            for(let i = 1; i <= lastDay.getDate(); i++) {
+                const dayElement = document.createElement('div');
+                dayElement.classList.add('calendar-day');
+                dayElement.textContent = i;
+
+                const currentDate = new Date(date.getFullYear(), date.getMonth(), i);
+                const dateStr = formatDateString(currentDate);
+                
+                if(tasks[dateStr] && tasks[dateStr].length > 0) {
+                    dayElement.classList.add('has-tasks');
+                }
+
+                const today = new Date();
+                if(i === today.getDate() && 
+                   date.getMonth() === today.getMonth() && 
+                   date.getFullYear() === today.getFullYear()) {
+                    dayElement.classList.add('today');
+                }
+
+                dayElement.addEventListener('click', () => openTaskModal(dateStr));
+                calendarDays.appendChild(dayElement);
+            }
+        }
+
+        function openTaskModal(dateStr) {
+            const date = new Date(dateStr);
+            selectedDateSpan.textContent = date.toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+            });
+            taskModal.classList.add('active');
+            displayTasks(dateStr);
+        }
+
+        function displayTasks(dateStr) {
+            selectedDateStr = dateStr;
+            tasksList.innerHTML = '';
+            if(tasks[dateStr]) {
+                tasks[dateStr].forEach((task, index) => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `
+                        <div class="task-info">
+                            <span class="task-text ${task.completed ? 'completed' : ''}">${task.text}</span>
+                            <div class="task-time">
+                                <span>${task.startTime} - ${task.endTime}</span>
+                            </div>
+                        </div>
+                        <button class="delete-task" onclick="deleteTask('${dateStr}', ${index})">
+                            <i class="uil uil-trash-alt"></i>
+                        </button>
+                    `;
+                    if (task.completed) {
+                        li.style.opacity = '0.6';
+                    }
+                    tasksList.appendChild(li);
+                });
+            }
+            addTaskForm.style.display = 'none';
+            addTaskBtn.style.display = 'block';
+        }
+
+        function showAddTaskForm() {
+            addTaskForm.style.display = 'block';
+            addTaskBtn.style.display = 'none';
+            taskInput.value = '';
+            startTime.value = '';
+            endTime.value = '';
+            taskInput.focus();
+        }
+
+        function hideAddTaskForm() {
+            addTaskForm.style.display = 'none';
+            addTaskBtn.style.display = 'block';
+        }
+
+        function saveTask() {
+            if(taskInput.value.trim() !== '') {
+                if(!tasks[selectedDateStr]) {
+                    tasks[selectedDateStr] = [];
+                }
+                
+                tasks[selectedDateStr].push({
+                    text: taskInput.value.trim(),
+                    startTime: startTime.value || '00:00',
+                    endTime: endTime.value || '00:00',
+                    completed: false
+                });
+
+                hideAddTaskForm();
+                displayTasks(selectedDateStr);
+                generateCalendar(currentDate);
+            }
+        }
+
+        function deleteTask(dateStr, index) {
+            tasks[dateStr].splice(index, 1);
+            if(tasks[dateStr].length === 0) {
+                delete tasks[dateStr];
+            }
+            displayTasks(dateStr);
+            generateCalendar(currentDate);
+        }
+
+        // Event Listeners
+        calendarDots.addEventListener('click', (e) => {
+            e.stopPropagation(); // Prevent click from reaching window
+            monthlyCalendar.classList.toggle('active');
+            generateCalendar(currentDate);
+        });
+
+        // Close calendar when clicking outside
+        window.addEventListener('click', (e) => {
+            if (!monthlyCalendar.contains(e.target) && monthlyCalendar.classList.contains('active')) {
+                monthlyCalendar.classList.remove('active');
+            }
+        });
+
+        // Prevent calendar from closing when clicking inside it
+        monthlyCalendar.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+
+        prevMonth.addEventListener('click', () => {
+            currentDate.setMonth(currentDate.getMonth() - 1);
+            generateCalendar(currentDate);
+        });
+
+        nextMonth.addEventListener('click', () => {
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            generateCalendar(currentDate);
+        });
+
+        closeModal.addEventListener('click', () => {
+            taskModal.classList.remove('active');
+        });
+
+        addTaskBtn.addEventListener('click', showAddTaskForm);
+        saveTaskBtn.addEventListener('click', saveTask);
+        cancelAddTask.addEventListener('click', hideAddTaskForm);
+
+        window.addEventListener('click', (e) => {
+            if(e.target === taskModal) {
+                taskModal.classList.remove('active');
+            }
+        });
+
+        // Task Alarm Functions
+        function checkTaskAlarms() {
+            const now = new Date();
+            const currentDateStr = formatDateString(now);
+            const currentHours = now.getHours().toString().padStart(2, '0');
+            const currentMinutes = now.getMinutes().toString().padStart(2, '0');
+            const currentSeconds = now.getSeconds();
+            const currentTime = `${currentHours}:${currentMinutes}`;
+
+            if (tasks[currentDateStr]) {
+                tasks[currentDateStr].forEach((task, index) => {
+                    if (!task.completed && task.startTime === currentTime && currentSeconds === 0) {
+                        showTaskAlarm(task, currentDateStr, index);
+                    }
+                });
+            }
+
+            // Calculate milliseconds until next check (at the start of next second)
+            const msUntilNextSecond = 1000 - now.getMilliseconds();
+            setTimeout(checkTaskAlarms, msUntilNextSecond);
+        }
+
+        function showTaskAlarm(task, dateStr, taskIndex) {
+            taskAlarmTime.textContent = formatTime(task.startTime);
+            taskAlarmText.textContent = task.text;
+            taskAlarm.classList.add('active');
+            activeTaskAlarms[0] = taskIndex;
+
+            // Play a different notification sound for 5 seconds
+            try {
+                const context = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = context.createOscillator();
+                const gainNode = context.createGain();
+
+                oscillator.connect(gainNode);
+                gainNode.connect(context.destination);
+
+                // Set the tone properties
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(440, context.currentTime); // A4 note
+                gainNode.gain.setValueAtTime(0.5, context.currentTime);
+
+                // Create a pleasant melody that repeats twice
+                const melodySequence = [
+                    { note: 440, duration: 0.2 }, // A4
+                    { note: 554.37, duration: 0.2 }, // C#5
+                    { note: 659.25, duration: 0.2 }, // E5
+                    { note: 880, duration: 0.4 }, // A5
+                ];
+
+                // Play the melody twice
+                const melody = [...melodySequence, ...melodySequence];
+
+                let startTime = context.currentTime;
+                melody.forEach(({ note, duration }) => {
+                    oscillator.frequency.setValueAtTime(note, startTime);
+                    startTime += duration;
+                });
+
+                // Start and stop the tone
+                oscillator.start();
+                setTimeout(() => {
+                    oscillator.stop();
+                    context.close();
+                }, 5000);
+            } catch (e) {
+                console.log('Audio notification not supported');
+            }
+
+            // Vibrate for 5 seconds with pattern (500ms on, 100ms off)
+            if ('vibrate' in navigator) {
+                // Create a pattern that lasts 5 seconds: [on, off, on, off, ...]
+                const vibrationPattern = [];
+                const duration = 5000; // 5 seconds
+                const step = 600; // 500ms on + 100ms off
+                let time = 0;
+                
+                while (time < duration) {
+                    vibrationPattern.push(500); // 500ms on
+                    vibrationPattern.push(100); // 100ms off
+                    time += step;
+                }
+                
+                navigator.vibrate(vibrationPattern);
+            }
+
+            // Set up auto-close at end time
+            if (task.endTime) {
+                const now = new Date();
+                const [endHours, endMinutes] = task.endTime.split(':');
+                const endTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 
+                                      parseInt(endHours), parseInt(endMinutes), 0);
+                
+                const timeUntilEnd = endTime - now;
+                if (timeUntilEnd > 0) {
+                    setTimeout(() => {
+                        hideTaskAlarm(dateStr, taskIndex);
+                    }, timeUntilEnd);
+                }
+            }
+        }
+
+        function hideTaskAlarm(dateStr, taskIndex) {
+            taskAlarm.classList.remove('active');
+            if (tasks[dateStr] && tasks[dateStr][taskIndex]) {
+                tasks[dateStr][taskIndex].completed = true;
+                saveTasks();
+                displayTasks(dateStr);
+            }
+        }
+
+        function formatTime(timeStr) {
+            const [hours, minutes] = timeStr.split(':');
+            const date = new Date();
+            date.setHours(parseInt(hours));
+            date.setMinutes(parseInt(minutes));
+            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        // Add event listener for complete button
+        completeTaskBtn.addEventListener('click', () => {
+            hideTaskAlarm(selectedDateStr, activeTaskAlarms[0]);
+        });
+
+        // Check for task alarms every minute
+        // setInterval(checkTaskAlarms, 60000); // Remove this line
+        checkTaskAlarms(); // This will start the recursive precise checking
+
+        // Initialize
+        setInterval(clock, 1000);
+        generateCalendar(currentDate);
+    </script>
+</body>
+</html>
