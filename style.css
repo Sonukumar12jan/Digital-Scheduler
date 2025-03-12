@@ -67,6 +67,7 @@ html {
 .dots {
     font-size: min(7em, 12vw);
     color: #929292;
+    transform: translateY(-9px);
 }
 
 .hours{
